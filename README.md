@@ -1,36 +1,76 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Silver News Telegram Bot (Next.js)
 
-## Getting Started
+This project fetches silver-related news from `newsdata.io`, deduplicates articles, and sends a digest to Telegram subscribers on each cron run.
 
-First, run the development server:
+## Prerequisites
+
+- Node.js 20+
+- Supabase project
+- Telegram bot token
+- NewsData API key
+
+## Setup
+
+1. Install dependencies:
+
+```bash
+npm install
+```
+
+2. Copy environment template:
+
+```bash
+cp .env.example .env.local
+```
+
+3. Fill `.env.local`:
+
+```env
+NEWSDATA_API_KEY=
+TELEGRAM_BOT_TOKEN=
+CRON_SECRET=
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+TELEGRAM_WEBHOOK_SECRET=
+```
+
+4. Run SQL from [supabase/schema.sql](/D:/Practice 1/telegram_bot/news_bot/supabase/schema.sql) in Supabase SQL Editor.
+
+5. Start app:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## API Routes
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `POST /api/subscribe` with body `{ "chatId": "123456789" }`
+- `POST /api/unsubscribe` with body `{ "chatId": "123456789" }`
+- `GET /api/subscribers/count`
+- `POST /api/telegram/webhook` for Telegram `/start` and `/stop`
+- `POST /api/cron/silver-news` with header `Authorization: Bearer <CRON_SECRET>`
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Cron Trigger
 
-## Learn More
+Use any external scheduler to call:
 
-To learn more about Next.js, take a look at the following resources:
+- Method: `POST`
+- URL: `https://<your-domain>/api/cron/silver-news`
+- Header: `Authorization: Bearer <CRON_SECRET>`
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Example schedule: every 30 minutes.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Telegram Webhook
 
-## Deploy on Vercel
+Set webhook once:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+curl -X POST "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook" \
+  -H "Content-Type: application/json" \
+  -d "{\"url\":\"https://<your-domain>/api/telegram/webhook\",\"secret_token\":\"<TELEGRAM_WEBHOOK_SECRET>\"}"
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Users can then send:
+
+- `/start` to subscribe
+- `/stop` to unsubscribe
