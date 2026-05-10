@@ -23,21 +23,42 @@ export async function POST(request: NextRequest) {
     const existingKeys = await getExistingArticleKeys(allArticles.map((article) => article.key));
     const newArticles = allArticles.filter((article) => !existingKeys.has(article.key));
     const pickedArticles = newArticles.slice(0, 10);
+    const subscribers = await listSubscribers();
 
     if (!pickedArticles.length) {
+      const noNewsMessage = "No new news found wait for next update";
+      let sentCount = 0;
+      const failedChatIds: string[] = [];
+
+      for (const chatId of subscribers) {
+        try {
+          await sendDigest(chatId, noNewsMessage);
+          sentCount += 1;
+        } catch {
+          failedChatIds.push(chatId);
+        }
+      }
+
       await writeRunLog({
         startedAt,
         finishedAt: new Date().toISOString(),
         fetchedCount: allArticles.length,
         newCount: 0,
-        sentCount: 0,
-        status: "no_new_items",
+        sentCount,
+        status: failedChatIds.length ? "partial" : "success",
+        errorText: failedChatIds.length ? `Failed chat IDs: ${failedChatIds.join(", ")}` : null,
       });
-      return NextResponse.json({ ok: true, message: "No new silver news." });
+
+      return NextResponse.json({
+        ok: true,
+        message: noNewsMessage,
+        subscriberCount: subscribers.length,
+        sentCount,
+        failedChatIds,
+      });
     }
 
     await persistSentArticles(pickedArticles);
-    const subscribers = await listSubscribers();
     const digest = formatDigest(pickedArticles);
 
     let sentCount = 0;
@@ -84,4 +105,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
-
