@@ -31,10 +31,12 @@ export type Database = {
         Row: {
           chat_id: string;
           created_at: string;
+          preferred_topic: string | null;
         };
         Insert: {
           chat_id: string;
           created_at?: string;
+          preferred_topic?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["subscribers"]["Insert"]>;
         Relationships: [];
@@ -51,6 +53,22 @@ export type Database = {
           sent_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["sent_articles"]["Insert"]>;
+        Relationships: [];
+      };
+      user_sent_articles: {
+        Row: {
+          article_key: string;
+          chat_id: string;
+          sent_at: string;
+          topic: string;
+        };
+        Insert: {
+          article_key: string;
+          chat_id: string;
+          sent_at?: string;
+          topic: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["user_sent_articles"]["Insert"]>;
         Relationships: [];
       };
     };

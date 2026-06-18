@@ -2,14 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { isCronAuthorized } from "@/lib/auth";
 import { formatDigest } from "@/lib/digest";
-import { fetchSilverNews } from "@/lib/newsdata";
+import { fetchNewsByTopic } from "@/lib/newsdata";
 import { writeRunLog } from "@/lib/run-logs";
-import { getExistingArticleKeys, persistSentArticles } from "@/lib/sent-articles";
-import { listSubscribers } from "@/lib/subscribers";
+import { listSubscribersWithTopics } from "@/lib/subscribers";
 import { sendDigest } from "@/lib/telegram";
+import { getExistingUserTopicArticleKeys, persistUserSentArticles } from "@/lib/user-sent-articles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const MAX_ARTICLES_PER_DIGEST = 10;
 
 export async function POST(request: NextRequest) {
   if (!isCronAuthorized(request.headers.get("authorization"))) {
@@ -19,53 +21,44 @@ export async function POST(request: NextRequest) {
   const startedAt = new Date().toISOString();
 
   try {
-    const allArticles = await fetchSilverNews();
-    const existingKeys = await getExistingArticleKeys(allArticles.map((article) => article.key));
-    const newArticles = allArticles.filter((article) => !existingKeys.has(article.key));
-    const pickedArticles = newArticles.slice(0, 10);
-    const subscribers = await listSubscribers();
+    const subscribers = await listSubscribersWithTopics();
+    const topics = Array.from(new Set(subscribers.map((subscriber) => subscriber.topic)));
+    const topicArticles = new Map<string, Awaited<ReturnType<typeof fetchNewsByTopic>>>();
 
-    if (!pickedArticles.length) {
-      const noNewsMessage = "No new news found wait for next update";
-      let sentCount = 0;
-      const failedChatIds: string[] = [];
-
-      for (const chatId of subscribers) {
-        try {
-          await sendDigest(chatId, noNewsMessage);
-          sentCount += 1;
-        } catch {
-          failedChatIds.push(chatId);
-        }
-      }
-
-      await writeRunLog({
-        startedAt,
-        finishedAt: new Date().toISOString(),
-        fetchedCount: allArticles.length,
-        newCount: 0,
-        sentCount,
-        status: failedChatIds.length ? "partial" : "success",
-        errorText: failedChatIds.length ? `Failed chat IDs: ${failedChatIds.join(", ")}` : null,
-      });
-
-      return NextResponse.json({
-        ok: true,
-        message: noNewsMessage,
-        subscriberCount: subscribers.length,
-        sentCount,
-        failedChatIds,
-      });
+    let fetchedCount = 0;
+    for (const topic of topics) {
+      const articles = await fetchNewsByTopic(topic);
+      topicArticles.set(topic, articles);
+      fetchedCount += articles.length;
     }
 
-    await persistSentArticles(pickedArticles);
-    const digest = formatDigest(pickedArticles);
-
     let sentCount = 0;
+    let newCount = 0;
     const failedChatIds: string[] = [];
-    for (const chatId of subscribers) {
+
+    for (const subscriber of subscribers) {
+      const topic = subscriber.topic;
+      const chatId = subscriber.chatId;
+      const articles = topicArticles.get(topic) ?? [];
+      const existingKeys = await getExistingUserTopicArticleKeys(
+        chatId,
+        topic,
+        articles.map((article) => article.key),
+      );
+      const unseenArticles = articles
+        .filter((article) => !existingKeys.has(article.key))
+        .slice(0, MAX_ARTICLES_PER_DIGEST);
+
+      const message = unseenArticles.length
+        ? formatDigest(topic, unseenArticles)
+        : `No new news found for ${topic}. Wait for next update.`;
+
       try {
-        await sendDigest(chatId, digest);
+        await sendDigest(chatId, message);
+        if (unseenArticles.length) {
+          await persistUserSentArticles(chatId, topic, unseenArticles);
+          newCount += unseenArticles.length;
+        }
         sentCount += 1;
       } catch {
         failedChatIds.push(chatId);
@@ -75,17 +68,18 @@ export async function POST(request: NextRequest) {
     await writeRunLog({
       startedAt,
       finishedAt: new Date().toISOString(),
-      fetchedCount: allArticles.length,
-      newCount: pickedArticles.length,
+      fetchedCount,
+      newCount,
       sentCount,
-      status: failedChatIds.length ? "partial" : "success",
+      status: failedChatIds.length ? "partial" : newCount === 0 ? "no_new_items" : "success",
       errorText: failedChatIds.length ? `Failed chat IDs: ${failedChatIds.join(", ")}` : null,
     });
 
     return NextResponse.json({
       ok: true,
-      fetchedCount: allArticles.length,
-      newCount: pickedArticles.length,
+      fetchedCount,
+      newCount,
+      topicCount: topics.length,
       subscriberCount: subscribers.length,
       sentCount,
       failedChatIds,

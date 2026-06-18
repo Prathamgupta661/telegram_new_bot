@@ -73,13 +73,21 @@ function isLikelySilverCommodityArticle(item: z.infer<typeof newsItemSchema>): b
   return !hasNoise;
 }
 
-export async function fetchSilverNews(): Promise<NewsArticle[]> {
+function normalizeTopic(topic: string): string {
+  return topic.trim().toLowerCase() || "silver";
+}
+
+export async function fetchNewsByTopic(topic: string): Promise<NewsArticle[]> {
+  const normalizedTopic = normalizeTopic(topic);
   const env = getEnv();
   const url = new URL("https://newsdata.io/api/1/latest");
   url.searchParams.set("apikey", env.NEWSDATA_API_KEY);
-  url.searchParams.set("qInTitle", "silver");
+  url.searchParams.set("qInTitle", normalizedTopic);
   url.searchParams.set("language", "en");
-  url.searchParams.set("category", "business");
+
+  if (normalizedTopic === "silver") {
+    url.searchParams.set("category", "business");
+  }
 
   const response = await fetch(url, { cache: "no-store" });
   if (!response.ok) {
@@ -88,13 +96,14 @@ export async function fetchSilverNews(): Promise<NewsArticle[]> {
 
   const payload = newsResponseSchema.parse(await response.json());
   const items = payload.results ?? [];
+  const shouldApplySilverFilter = normalizedTopic === "silver";
 
   return items
     .filter(
       (item) =>
         Boolean(item.title) &&
         Boolean(item.link) &&
-        isLikelySilverCommodityArticle(item),
+        (!shouldApplySilverFilter || isLikelySilverCommodityArticle(item)),
     )
     .map((item) => ({
       key: buildArticleKey(item),
@@ -103,4 +112,8 @@ export async function fetchSilverNews(): Promise<NewsArticle[]> {
       pubDate: item.pubDate ?? null,
       sourceName: item.source_name ?? null,
     }));
+}
+
+export async function fetchSilverNews(): Promise<NewsArticle[]> {
+  return fetchNewsByTopic("silver");
 }

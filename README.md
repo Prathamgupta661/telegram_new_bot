@@ -1,6 +1,6 @@
 # Silver News Telegram Bot (Next.js)
 
-This project fetches silver-related news from `newsdata.io`, deduplicates articles, and sends a digest to Telegram subscribers on each cron run.
+This project fetches topic-based news from `newsdata.io`, deduplicates articles per user/topic, and sends a digest to Telegram subscribers on each cron run.
 
 ## Prerequisites
 
@@ -47,7 +47,7 @@ npm run dev
 - `POST /api/subscribe` with body `{ "chatId": "123456789" }`
 - `POST /api/unsubscribe` with body `{ "chatId": "123456789" }`
 - `GET /api/subscribers/count`
-- `POST /api/telegram/webhook` for Telegram `/start` and `/stop`
+- `POST /api/telegram/webhook` for Telegram `/start`, `/stop`, and `/settopic <topic>`
 - `POST /api/cron/silver-news` with header `Authorization: Bearer <CRON_SECRET>`
 
 ## Cron Trigger
@@ -73,4 +73,5 @@ curl -X POST "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook" \
 Users can then send:
 
 - `/start` to subscribe
+- `/settopic <topic>` to customize their feed (default topic is `silver`)
 - `/stop` to unsubscribe
